@@ -44,12 +44,13 @@ def lowerMuts(structures):
 				s.sequence = s.sequence[:i] + aa.lower() + s.sequence[i+1:]
 
 
-def limitstructs(structures, limit, keepPDB, maxgapsize = 20):
+def limitstructs(structures, limit, keepPDB, skipPDB, maxgapsize = 20):
 	"""
 	Custom winnowing: limits the number of structures imported but retains at least n structures per residues, where n=limit.
 	"""
-	# parse keepPDB user input
-	requiredPDBs = keepPDB.replace(".PDB", "").replace(".pdb", "").split(",")
+	# parse keepPDB and skipPDB user input
+	requiredPDBs = keepPDB.upper().replace(".PDB", "").split(",")
+	undesiredPDBs = skipPDB.upper().replace(".PDB", "").split(",")
 	# sort structures by percentId, then by BLAST score, then by length
 	from operator import itemgetter, attrgetter
 	temp1 = sorted(structures[1:], key=attrgetter('useqlength'), reverse=True)
@@ -68,6 +69,8 @@ def limitstructs(structures, limit, keepPDB, maxgapsize = 20):
 		if s.pdb in requiredPDBs:
 			selectedstructs.append(s)
 			continue
+		if s.pdb in undesiredPDBs:
+			continue	
 		newlycovered = 0
 		for i in range(s.ustart, s.uend):
 			if coveragedict[i] < limit:
@@ -107,7 +110,7 @@ def closeModels(availablemodels):
 
 
 
-def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, winnow = '0', limit = 0, keepPDB = '', excludeSelected = False, deleteHidden = True, hideSubmodels = True, suppressWarning = False):
+def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, winnow = '0', limit = 0, keepPDB = '', skipPDB = '', excludeSelected = False, deleteHidden = True, hideSubmodels = True, suppressWarning = False):
 	
 
 	"""
@@ -139,8 +142,6 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 
 			if (currentpdb, m.qStart, m.qEnd) not in chainscoredict:
 				
-				#COULD BE MOVED AFTER PERCENTID FILTERING!
-				#ISSUES WITH 3TEU! percent id in one hit only 0.8, thus gets discarded
 				if suppressdoubles: 
 					if currentpdb in pdblist:
 						continue
@@ -198,7 +199,7 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 
 	# limit number of structures
 	if limit != 0:
-		structures = limitstructs(structures, limit, keepPDB)
+		structures = limitstructs(structures, limit, keepPDB, skipPDB)
 		structures = sortstructs(structures)
 		# get rid of all gap columns
 		elimAllGapColumns(structures)
@@ -218,9 +219,6 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 		print 'Blast winnowing: %s (max. nr. of hits per query region).' % winnow 
 	fout.write( 'A total of %d Blast hits were found.\n' % (int(len(parser.matches)) - 1) )
 	print 'A total of %d Blast hits were found.' % (int(len(parser.matches)) - 1)
-	if keepPDB:
-		fout.write('Retaining the PDB files %s if found by BLAST.\n' % (keepPDB.replace(".PDB", "").replace(".pdb", "")))
-		print 'Retaining the PDB files %s if found by BLAST.\n' % (keepPDB.replace(".PDB", "").replace(".pdb", ""))
 	if includeNative:
 		fout.write('Including all native BLAST results. Non-native results filtered by a minimum score of %d.\n' % (minscore))
 		print 'Including all native BLAST results. Non-native results filtered by a minimum score of %d.' % (minscore)
@@ -238,6 +236,12 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 	if limit:
 		fout.write('Limiting hits: allowing %d structures per residue in target sequence. \n' % limit)
 		print 'Limiting hits: allowing %d structures per residue in target sequence.' % limit
+		if skipPDB:
+			fout.write('Skipping the PDB files %s if found by BLAST.\n' % (skipPDB.upper().replace(".PDB", "").split(",")))
+			print 'Skipping the PDB files %s if found by BLAST.' % (skipPDB.upper().replace(".PDB", "").split(","))
+		if keepPDB:
+			fout.write('Retaining the PDB files %s if found by BLAST.\n' % (keepPDB.upper().replace(".PDB", "").split(",")))
+			print 'Retaining the PDB files %s if found by BLAST.' % (keepPDB.upper().replace(".PDB", "").split(","))
 	nrofstructs = len(structures)-1
 	fout.write('Number of structures to be imported: %d.\n' % nrofstructs)
 	print 'Number of structures to be imported: %d.' % nrofstructs
@@ -1581,7 +1585,7 @@ def openMod(path, uid, mav, templateModels, web=False):
 	
 	
 		
-def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = 0, keepPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
+def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = 0, keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
 	
 	"""
 	Main mda routine, stepwise processing of different tasks:
@@ -1601,7 +1605,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	status('Fetching BLAST results completed, now filtering results and loading structures...')
 	print('Fetching BLAST results completed, now filtering results and loading structures...')
 	try:
-		structures = processBlast(results, uid, path, minscore, includeNative, suppressdoubles, percentId, winnow, limit, keepPDB, excludeSelected, deleteHidden, hideSubmodels, suppressWarning)
+		structures = processBlast(results, uid, path, minscore, includeNative, suppressdoubles, percentId, winnow, limit, keepPDB, skipPDB, excludeSelected, deleteHidden, hideSubmodels, suppressWarning)
 	except chimera.CancelOperation:
 		status('MDA aborted by user.')
 		print('MDA aborted by user.')
@@ -1645,7 +1649,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	
 	
 
-def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative = False, suppressDoubles = False, percentId = 0, forceBlast = False, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = 0, keepPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
+def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative = False, suppressDoubles = False, percentId = 0, forceBlast = False, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = 0, keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
 	
 	"""
 	Initial mda function, starts BLAST or reads stored BLAST database, then calls main().
@@ -1738,7 +1742,7 @@ def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative 
 			blastshelf[uid+winnow] = results
 			blastshelf.close()
 		# process the results:
-		main(results, uid, path, totseql, minScore, includeNative, suppressDoubles, percentId, group, hideSubmodels, hideComplex, hideAltChain, deleteHidden, coloring, winnow, limit, keepPDB, excludeSelected, hideMAV, suppressWarning)
+		main(results, uid, path, totseql, minScore, includeNative, suppressDoubles, percentId, group, hideSubmodels, hideComplex, hideAltChain, deleteHidden, coloring, winnow, limit, keepPDB, skipPDB, excludeSelected, hideMAV, suppressWarning)
 		
 	# blast function	
 	def startBlast(querySeq = seq, winnow = winnow):		
@@ -1772,7 +1776,7 @@ def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative 
 			blastshelf.close()
 			startBlast()
 		else:	
-			main(results, ID, path, totseqlength, minScore, includeNative, suppressDoubles, percentId, group, hideSubmodels, hideComplex, hideAltChain, deleteHidden, coloring, winnow, limit, keepPDB, excludeSelected, hideMAV, suppressWarning)
+			main(results, ID, path, totseqlength, minScore, includeNative, suppressDoubles, percentId, group, hideSubmodels, hideComplex, hideAltChain, deleteHidden, coloring, winnow, limit, keepPDB, skipPDB, excludeSelected, hideMAV, suppressWarning)
 	else:
 		startBlast()	
 		
@@ -1801,6 +1805,7 @@ def mdacommand(cmdname, args):
 				('winnow', string_arg),
 				('limit', int_arg), 
 				('keepPDB', string_arg),
+				('skipPDB', string_arg),
 				('excludeSelected', bool_arg),
 				('hideMAV', bool_arg),
 				('suppressWarning', bool_arg) ) 
