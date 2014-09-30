@@ -48,6 +48,9 @@ def limitstructs(structures, limit, keepPDB, skipPDB, maxgapsize = 20):
 	"""
 	Custom winnowing: limits the number of structures imported but retains at least n structures per residues, where n=limit.
 	"""
+	# no, no, there's no limit, no no
+	if limit == 0:
+		limit = len(structures) + 1
 	# parse keepPDB and skipPDB user input
 	requiredPDBs = keepPDB.upper().replace(".PDB", "").split(",")
 	undesiredPDBs = skipPDB.upper().replace(".PDB", "").split(",")
@@ -198,14 +201,13 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 		s.findBounds()
 
 	# limit number of structures
-	if limit != 0:
-		structures = limitstructs(structures, limit, keepPDB, skipPDB)
-		structures = sortstructs(structures)
-		# get rid of all gap columns
-		elimAllGapColumns(structures)
-		# update bounds:
-		for s in structures:
-			s.findBounds()
+	structures = limitstructs(structures, limit, keepPDB, skipPDB)
+	structures = sortstructs(structures)
+	# get rid of all gap columns
+	elimAllGapColumns(structures)
+	# update bounds:
+	for s in structures:
+		s.findBounds()
 
 	# initialize output file
 	from time import strftime
@@ -233,12 +235,12 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 		print 'Allowing multiple hits per pdb.'
 	fout.write('Percent ID threshold: %3.2f%%.\n' % (percentId))
 	print 'Percent ID threshold: %3.2f%%.' % (percentId)
+	if skipPDB:
+		fout.write('Skipping the PDB files %s if found by BLAST.\n' % (skipPDB.upper().replace(".PDB", "").split(",")))
+		print 'Skipping the PDB files %s if found by BLAST.' % (skipPDB.upper().replace(".PDB", "").split(","))
 	if limit:
 		fout.write('Limiting hits: allowing %d structures per residue in target sequence. \n' % limit)
 		print 'Limiting hits: allowing %d structures per residue in target sequence.' % limit
-		if skipPDB:
-			fout.write('Skipping the PDB files %s if found by BLAST.\n' % (skipPDB.upper().replace(".PDB", "").split(",")))
-			print 'Skipping the PDB files %s if found by BLAST.' % (skipPDB.upper().replace(".PDB", "").split(","))
 		if keepPDB:
 			fout.write('Retaining the PDB files %s if found by BLAST.\n' % (keepPDB.upper().replace(".PDB", "").split(",")))
 			print 'Retaining the PDB files %s if found by BLAST.' % (keepPDB.upper().replace(".PDB", "").split(","))
@@ -547,7 +549,7 @@ class Structure:
 				if m.id == currentid:
 					m.ustart = self.ustart
 					self.models.append(m)
-					availablemodels.remove(m)			
+					availablemodels.remove(m)		
 			
 		
 	def getId(self):
