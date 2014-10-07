@@ -44,7 +44,7 @@ def lowerMuts(structures):
 				s.sequence = s.sequence[:i] + aa.lower() + s.sequence[i+1:]
 
 
-def limitstructs(structures, limit, keepPDB, skipPDB, maxgapsize = 20):
+def limitstructs(structures, limit, keepPDB, skipPDB, maxgapsize = 0):
 	"""
 	Custom winnowing: limits the number of structures imported but retains at least n structures per residues, where n=limit.
 	"""
@@ -200,8 +200,24 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 	for s in structures:
 		s.findBounds()
 
+	# parse user input for limit and maxgapsize
+	from chimera import UserError
+	origlimit = limit
+	try:
+		limitlist = limit.split(",")
+		limit = int(limitlist[0])
+		if len(limitlist) == 2:
+			maxgapsize = int(limitlist[1])
+		elif len(limitlist) == 1:
+			maxgapsize = 0
+		else:
+			raise UserError("Unrecognized limit input: %s" % origlimit)
+	except:
+		raise UserError("Unrecognized limit input: %s" % origlimit)
+				
+
 	# limit number of structures
-	structures = limitstructs(structures, limit, keepPDB, skipPDB)
+	structures = limitstructs(structures, limit, keepPDB, skipPDB, maxgapsize)
 	structures = sortstructs(structures)
 	# get rid of all gap columns
 	elimAllGapColumns(structures)
@@ -216,7 +232,7 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 	filename = join(path, 'MDA_output_%s.txt' % uid)
 	fout = osOpen(filename, 'w')
 	fout.write('Output from MultiDomainAssembler generated at ' + strftime("%Y-%m-%d %H:%M:%S") + '. \n')
-	if winnow != '0' and limit == 0:
+	if winnow != '0':
 		fout.write( 'Blast winnowing: %s (max. nr. of hits per query region).\n' % winnow )
 		print 'Blast winnowing: %s (max. nr. of hits per query region).' % winnow 
 	fout.write( 'A total of %d Blast hits were found.\n' % (int(len(parser.matches)) - 1) )
@@ -238,9 +254,9 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 	if skipPDB:
 		fout.write('Skipping the PDB files %s if found by BLAST.\n' % (skipPDB.upper().replace(".PDB", "").split(",")))
 		print 'Skipping the PDB files %s if found by BLAST.' % (skipPDB.upper().replace(".PDB", "").split(","))
-	if limit:
-		fout.write('Limiting hits: allowing %d structures per residue in target sequence. \n' % limit)
-		print 'Limiting hits: allowing %d structures per residue in target sequence.' % limit
+	if limit != 0:
+		fout.write('Limiting hits: allowing %d structures per residue in target sequence (allowing gaps of max. %d residues). \n' % (limit, maxgapsize))
+		print 'Limiting hits: allowing %d structures per residue in target sequence (allowing gaps of max. %d residues).' % (limit, maxgapsize)
 		if keepPDB:
 			fout.write('Retaining the PDB files %s if found by BLAST.\n' % (keepPDB.upper().replace(".PDB", "").split(",")))
 			print 'Retaining the PDB files %s if found by BLAST.' % (keepPDB.upper().replace(".PDB", "").split(","))
@@ -1393,6 +1409,46 @@ def arrangeModelsY(Boxes, Gaps, hideComplex):
 		rearrangeHidden(b.structures)
 
 
+
+
+def setAttributes(Structures):
+
+	"""
+	Sets attributes for models and residues. These can be used by the 
+	Color-by-attributes-tool in Chimera to set custom colors.
+	"""
+	
+	for s in Structures[1:]:
+		for m in s.models:
+			# set model attributes: percentID, Blast score
+			m.percentid = s.percentid
+			m.blastscore = s.score
+		# set residue attributes; only works for first model
+		for r in s.models[0].residues:
+			if str(r.id.chainId) in s.ligands:
+				r.aligned = 3.0 # ligand res
+			else:
+				r.aligned = 1.0 # blast chain res
+
+
+		for i,char in enumerate(s.seqobj.ungapped()):
+			
+			try:
+				r = s.matchmap[i]
+			except KeyError:
+				continue	
+
+			if i in s.blastresind:
+				if char.islower():
+					r.aligned = 4.0 # mutation
+				else:
+					r.aligned = 2.0 # part of blast alignment
+
+			
+
+
+
+
 def colorModels(Structures, uid, coloring= 'res'):
 
 	"""
@@ -1587,7 +1643,7 @@ def openMod(path, uid, mav, templateModels, web=False):
 	
 	
 		
-def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = 0, keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
+def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
 	
 	"""
 	Main mda routine, stepwise processing of different tasks:
@@ -1632,7 +1688,8 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 
 	status('Arranging completed, now applying coloring...')
 	print('Arranging completed, now applying coloring...')
-	colorModels(structures, uid, coloring)
+	setAttributes(structures)
+	#colorModels(structures, uid, coloring)
 
 	if not hideMAV:
 		status('Coloring completed, loading sequence alignment...')
@@ -1651,7 +1708,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	
 	
 
-def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative = False, suppressDoubles = False, percentId = 0, forceBlast = False, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = 0, keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
+def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative = False, suppressDoubles = False, percentId = 0, forceBlast = False, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
 	
 	"""
 	Initial mda function, starts BLAST or reads stored BLAST database, then calls main().
@@ -1805,7 +1862,7 @@ def mdacommand(cmdname, args):
 				('deleteHidden', bool_arg), 
 				('coloring', string_arg),
 				('winnow', string_arg),
-				('limit', int_arg), 
+				('limit', string_arg), 
 				('keepPDB', string_arg),
 				('skipPDB', string_arg),
 				('excludeSelected', bool_arg),
