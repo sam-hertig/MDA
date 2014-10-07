@@ -304,7 +304,7 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 		selmolset = set()
 		for m in selectedmols:
 			try:
-				selmolset.add((str(m.name), m.ustart))
+				selmolset.add((str(m.name), m._mda_ustart))
 			except AttributeError:
 				print "A model has been selected that was not previously imported by MDA, it will be deleted anyway."
 
@@ -312,7 +312,7 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 	modifiedmodels = []
 	for m in availablemodels:
 		try:
-			if len(m.atoms) != m.nrofatoms:
+			if len(m.atoms) != m._mda_nrofatoms:
 				print "Model %d (%s) has been modified by a previous MDA run or the user, thus reloading that pdb file." % (m.id, str(m.name))
 				modifiedmodels.append(m)
 		except AttributeError:
@@ -364,7 +364,7 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 		# instead we use selmolset, see above:
 		for s in structures[1:]:
 			for m in s.models:
-				if (str(m.name), m.ustart) in selmolset:
+				if (str(m.name), m._mda_ustart) in selmolset:
 					closeModels(s.models)
 					print "WARNING: Excluding %s since it was selected by the user." % s.pdb
 					break
@@ -536,7 +536,7 @@ class Structure:
 			temp = []
 			for m in samenamemodels:
 				try:
-					if m.ustart == self.ustart:
+					if m._mda_ustart == self.ustart:
 						temp.append(m)
 				except AttributeError:
 					print "Model %s doesn't seem to belong to any MDA structure previously, thus it will be deleted and reloaded." % str(m.id)
@@ -557,13 +557,13 @@ class Structure:
 				self.models = []
 			# store number of atoms as an attribute of each model, see the creation of the list of availablemodels above...	
 			for m in self.models:
-				m.nrofatoms	= len(m.atoms)
-				m.ustart = self.ustart
+				m._mda_nrofatoms = len(m.atoms) # the prefix _mda_ hides this attributes from the attribute gathering process in the render by attribute tool
+				m._mda_ustart = self.ustart # the prefix _mda_ hides this attributes from the attribute gathering process in the render by attribute tool
 		else: 
 			currentid = samenamemodels[0].id
 			for m in samenamemodels:
 				if m.id == currentid:
-					m.ustart = self.ustart
+					m._mda_ustart = self.ustart # the prefix _mda_ hides this attributes from the attribute gathering process in the render by attribute tool
 					self.models.append(m)
 					availablemodels.remove(m)		
 			
@@ -1420,159 +1420,67 @@ def setAttributes(Structures):
 	
 	for s in Structures[1:]:
 		for m in s.models:
-			# set model attributes: percentID, Blast score
-			m.percentid = s.percentid
-			m.blastscore = s.score
-		# set residue attributes; only works for first model
+			for r in m.residues:
+				if str(r.id.chainId) not in s.ligands: # only set these attributes for non-ligand chains:
+					r.mda_percentid = s.percentid
+					r.mda_blastscore = s.score
 		for r in s.models[0].residues:
 			if str(r.id.chainId) in s.ligands:
-				r.aligned = 3.0 # ligand res
+				r.mda_alignment = 3.0 # ligand res
 			else:
-				r.aligned = 1.0 # blast chain res
-
-
+				r.mda_alignment = 1.0 # blast chain res, should be made transparent
 		for i,char in enumerate(s.seqobj.ungapped()):
-			
 			try:
 				r = s.matchmap[i]
 			except KeyError:
 				continue	
-
 			if i in s.blastresind:
 				if char.islower():
-					r.aligned = 4.0 # mutation
+					r.mda_alignment = 4.0 # mutation
 				else:
-					r.aligned = 2.0 # part of blast alignment
+					r.mda_alignment = 2.0 # part of blast alignment
 
 			
-
-
-
-
-def colorModels(Structures, uid, coloring= 'res'):
-
+def colorModels(Structures, coloring= 'mutations'):
 	"""
-	Coloring of models, three different options: 'res', 'rel' or 'abs'
+	Coloring of models, three different options: 'mutations' (default), 'percentid' or 'blastscore'
 	"""
-		
+
 	import chimera
-	from Midas import color
 		
 	coloring= coloring.lower()
 	
 	# define base colors
-	ligcolorQ = (0.118, 0.565, 1.0, 1.0) # Dodger Blue
-	ligcolor = "Dodger Blue"
-	mutcolorQ = (1.0, 0.271, 0.0, 1.0) # Orange Red
- 	modelcolorQ = (0.745, 0.745, 0.745, 1.0) # Gray
-	#noblastcolor = (0.412 , 0.412, 0.412, 0.5) # Dim Gray
-	noblastcolor = "Navy Blue" #or Black or Dim Gray
-		
-	# functions for rel. and abs. coloring 	
-	def colorgradient(value, color1, color2):
-		'''
-		Mixes two colors and produces a gradient.
-		Value has to be between 0 and 1.
-		Colors are 4tupels wih 4 floats.
-		'''
-		if not 0 <= value <= 1:
-			print 'Error mixing colors'
-		r = color1[0]*value + color2[0]*(1-value)
-		g = color1[1]*value + color2[1]*(1-value)
-		b = color1[2]*value + color2[2]*(1-value)
-		return (r, g, b, 1.0)
-		
-	def distinctcolor(x):
-		'''
-		Returns ten different colors depending on 0<x<1.
-		'''
-		if x > 0.9:
-			color = (75, 70, 230, 1.0)
-		elif x > 0.8:
-			color = (70, 180, 230, 1.0)
-		elif x > 0.7:
-			color = (70, 230, 200, 1.0)
-		elif x > 0.6:
-			color = (0, 130, 60, 1.0)
-		elif x > 0.5:
-			color = (0, 230, 60, 1.0)
-		elif x > 0.4:
-			color = (230, 220, 0, 1.0)
-		elif x > 0.3:
-			color = (255, 160, 50, 1.0)
-		elif x > 0.2:
-			color = (230, 70, 70, 1.0)
-		elif x > 0.1:
-			color = (230, 70, 175, 1.0)
-		else:
-			color = (160, 70, 230, 1.0)
-		color = (color[0]/255., color[1]/255., color[2]/255., 1.0)	
-		return color	
-	
-	# adjust colors depending on coloring scheme...	
-	if coloring== 'rel':	
-		hicolorQ = ligcolorQ
-		locolorQ = mutcolorQ
-		ligcolor = noblastcolor 
-		print 'Coloring by percent ID with a relative color scale.'
-	elif coloring== 'abs':	
-		ligcolor = noblastcolor
-		print 'Coloring by percent ID with an absolute color scale.'		
-	elif coloring== 'res':
-		print 'Coloring mutations per residue.'
-	elif coloring== 'off':		 
-		print 'No coloring by percent ID.'
-	else:
-		print 'Coloring command ("%s") not interpreted; defaulting to coloring mutations per residue.' % coloring
-	 	print '(Possible options for coloringare "abs", "rel", "res" or "off".)'
-	 	coloring= 'res'
+	mutcolor = "1.0,0.271,0.0,1.0" # Orange Red
+	ligcolor = "0.118,0.565,1.0,1.0" # Dodger Blue
+ 	blastcolor = "0.8,0.8,0.8,1.0" # some grey
 
-	# set color of model structure (not the ligands)
-	if coloring== 'rel':
-		# get max score values:
-		ids = []
-		for s in Structures[1:]:
-			ids.append(s.percentid)
-		minid = float(min(ids))	
-		maxid = float(max(ids))
-	for s in Structures[1:]:
-		if coloring== 'rel':
-			x = (s.percentid - minid) / float(maxid - minid)
-			s.modelcolor = colorgradient(x, hicolorQ, locolorQ)
-		elif coloring== 'abs':
-			x = s.percentid	/ 100.
-			s.modelcolor = distinctcolor(x)
-		else:			
-			s.modelcolor = modelcolorQ
-		
- 	# carry out coloring of structures
-	for s in Structures[1:]:
-		# color models				
-		for m in s.models:
-			# residues covered by blast will be colored differently further below, now set everything to the same noblastcolor
-			color(noblastcolor+",r", str(m)) #corresponds to ribcolor, see midas_text.py
-			# sets the color of the square in the model panel
-			if coloring== 'res' and s.percentid < 100:
-				m.color = chimera.MaterialColor(*mutcolorQ)
-			else:	
-				m.color = chimera.MaterialColor(*s.modelcolor)
-			# color ligands:	
-			for ligchain in s.ligands:
-				color(ligcolor, str(m) + ":." + ligchain) 
-		# color by residue
-		for i,char in enumerate(s.seqobj.ungapped()):
-			if i in s.blastresind:
-				r = s.matchmap[i]
-			else:
-				#print 'Failed to color a mutated residue of %s.' % s.pdb
-				continue
-			if coloring== 'res' and char.islower():
-				r.ribbonColor=chimera.MaterialColor(*mutcolorQ)
-			else:
-				r.ribbonColor=chimera.MaterialColor(*s.modelcolor)
-	
-	# color ions like ligands:		
-	color(ligcolor, "ions")
+ 	# color icons in model panel:
+ 	for s in Structures[1:]:
+		if s.percentid == 100:
+			for m in s.models:
+ 				m.color = chimera.MaterialColor(*[float(x) for x in blastcolor.split(',')])
+ 		else:
+ 			for m in s.models:
+ 				m.color = chimera.MaterialColor(*[float(x) for x in mutcolor.split(',')])
+ 			
+	# coloring by residue
+	chimera.runCommand( "rangecolor mda_alignment,r 2 %s 3 %s 4 %s" % (blastcolor, ligcolor, mutcolor) )	
+	if coloring in 'percentid' and len(coloring) >= 3:
+		chimera.runCommand( "rangecolor mda_percentid,r min %s max %s" % (mutcolor, blastcolor) )
+	elif coloring in 'blastscore' and len(coloring) >= 3:
+		chimera.runCommand( "rangecolor mda_blastscore,r min %s max %s" % (mutcolor, blastcolor) )
+	elif coloring in 'mutations' and len(coloring) >= 3:
+		pass
+	else:	
+		print 'Coloring command "%s" not understood, used option "mutations". (Please enter either "mutations", "blastscore" or "percentid".)' % coloring	
+
+	# make residues not aligned in BLAST significantly transparent
+	chimera.runCommand( "transparency 70,r :/mda_alignment=1" )
+
+	# color ions like ligands
+	chimera.runCommand( "color %s ions" % ligcolor )
+
 
 def findMAV():
 	"""
@@ -1643,7 +1551,7 @@ def openMod(path, uid, mav, templateModels, web=False):
 	
 	
 		
-def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
+def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'mutations', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
 	
 	"""
 	Main mda routine, stepwise processing of different tasks:
@@ -1689,7 +1597,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	status('Arranging completed, now applying coloring...')
 	print('Arranging completed, now applying coloring...')
 	setAttributes(structures)
-	#colorModels(structures, uid, coloring)
+	colorModels(structures, coloring)
 
 	if not hideMAV:
 		status('Coloring completed, loading sequence alignment...')
@@ -1708,7 +1616,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	
 	
 
-def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative = False, suppressDoubles = False, percentId = 0, forceBlast = False, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'res', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
+def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative = False, suppressDoubles = False, percentId = 0, forceBlast = False, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'mutations', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
 	
 	"""
 	Initial mda function, starts BLAST or reads stored BLAST database, then calls main().
