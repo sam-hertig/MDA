@@ -7,6 +7,11 @@
 #
 ###################################################################################################
 
+
+def OpenReplyLog():
+	from chimera import dialogs, tkgui
+	dialogs.display(tkgui._ReplyDialog.name)
+
 def getUniprotID(pdbid, chain):
 	from chimera.fetch import default_fetch_directory
 	dbpath = default_fetch_directory()
@@ -44,7 +49,7 @@ def lowerMuts(structures):
 				s.sequence = s.sequence[:i] + aa.lower() + s.sequence[i+1:]
 
 
-def limitstructs(structures, limit, keepPDB, skipPDB, maxgapsize = 0):
+def limitstructs(structures, limit, keepPDB, skipPDB, maxgapsize = 20):
 	"""
 	Custom winnowing: limits the number of structures imported but retains at least n structures per residues, where n=limit.
 	"""
@@ -113,7 +118,7 @@ def closeModels(availablemodels):
 
 
 
-def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, winnow = '0', limit = 0, keepPDB = '', skipPDB = '', excludeSelected = False, deleteHidden = True, hideSubmodels = True, suppressWarning = False):
+def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, winnow = '0', limit = 0, keepPDB = '', skipPDB = '', excludeSelected = False, deleteHidden = True, hideSubmodels = True, noConfirm = False):
 	
 
 	"""
@@ -209,7 +214,7 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 		if len(limitlist) == 2:
 			maxgapsize = int(limitlist[1])
 		elif len(limitlist) == 1:
-			maxgapsize = 0
+			maxgapsize = 20
 		else:
 			raise UserError("Unrecognized limit input: %s" % origlimit)
 	except:
@@ -322,7 +327,7 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 	closeModels(modifiedmodels)			
 
 	# warn user if a large number of models are about to be opened
-	if nrofstructs > 10 and not suppressWarning: #the limit depends on the patience of the user and the available RAM
+	if nrofstructs > 10 and not noConfirm: #the limit depends on the patience of the user and the available RAM
 		from chimera.baseDialog import AskYesNoDialog
 		dlg = AskYesNoDialog("Are you sure you want to import %d pdb files?" % nrofstructs, default="Yes")
 		if dlg.run(chimera.tkgui.app) == "no":
@@ -365,8 +370,8 @@ def processBlast(results, uid, path = '.', minscore = 50, includeNative = True, 
 		for s in structures[1:]:
 			for m in s.models:
 				if (str(m.name), m._mda_ustart) in selmolset:
+					print "WARNING: Excluding %d: %s since it was selected by the user." % (m.id, s.pdb)
 					closeModels(s.models)
-					print "WARNING: Excluding %s since it was selected by the user." % s.pdb
 					break
 				elif m == s.models[-1]:	
 					notselectedstructs.append(s)
@@ -1426,9 +1431,9 @@ def setAttributes(Structures):
 					r.mda_blastscore = s.score
 		for r in s.models[0].residues:
 			if str(r.id.chainId) in s.ligands:
-				r.mda_alignment = 3.0 # ligand res
+				r.mda_alignment = 4.0 # ligand res
 			else:
-				r.mda_alignment = 1.0 # blast chain res, should be made transparent
+				r.mda_alignment = 3.0 # blast chain res, should be made transparent
 		for i,char in enumerate(s.seqobj.ungapped()):
 			try:
 				r = s.matchmap[i]
@@ -1436,9 +1441,9 @@ def setAttributes(Structures):
 				continue	
 			if i in s.blastresind:
 				if char.islower():
-					r.mda_alignment = 4.0 # mutation
+					r.mda_alignment = 2.0 # mutation
 				else:
-					r.mda_alignment = 2.0 # part of blast alignment
+					r.mda_alignment = 1.0 # part of blast alignment
 
 			
 def colorModels(Structures, coloring= 'mutations'):
@@ -1452,20 +1457,20 @@ def colorModels(Structures, coloring= 'mutations'):
 	
 	# define base colors
 	mutcolor = "1.0,0.271,0.0,1.0" # Orange Red
-	ligcolor = "0.118,0.565,1.0,1.0" # Dodger Blue
- 	blastcolor = "0.8,0.8,0.8,1.0" # some grey
+	ligcolor = "0.118,0.565,1.0,0.3" # Dodger Blue 70% transparent
+ 	blastcolor = "0.7,0.7,0.7,1.0" # some grey
 
- 	# color icons in model panel:
- 	for s in Structures[1:]:
-		if s.percentid == 100:
-			for m in s.models:
- 				m.color = chimera.MaterialColor(*[float(x) for x in blastcolor.split(',')])
- 		else:
- 			for m in s.models:
- 				m.color = chimera.MaterialColor(*[float(x) for x in mutcolor.split(',')])
+ 	# # color icons in model panel:
+ 	# for s in Structures[1:]:
+	# 	if s.percentid == 100:
+	# 		for m in s.models:
+ 	# 			m.color = chimera.MaterialColor(*[float(x) for x in blastcolor.split(',')])
+ 	# 	else:
+ 	# 		for m in s.models:
+ 	# 			m.color = chimera.MaterialColor(*[float(x) for x in mutcolor.split(',')])
  			
 	# coloring by residue
-	chimera.runCommand( "rangecolor mda_alignment,r 2 %s 3 %s 4 %s" % (blastcolor, ligcolor, mutcolor) )	
+	chimera.runCommand( "rangecolor mda_alignment,r 1 %s 4 %s 2 %s" % (blastcolor, ligcolor, mutcolor) )	
 	if coloring in 'percentid' and len(coloring) >= 3:
 		chimera.runCommand( "rangecolor mda_percentid,r min %s max %s" % (mutcolor, blastcolor) )
 	elif coloring in 'blastscore' and len(coloring) >= 3:
@@ -1476,7 +1481,7 @@ def colorModels(Structures, coloring= 'mutations'):
 		print 'Coloring command "%s" not understood, used option "mutations". (Please enter either "mutations", "blastscore" or "percentid".)' % coloring	
 
 	# make residues not aligned in BLAST significantly transparent
-	chimera.runCommand( "transparency 70,r :/mda_alignment=1" )
+	chimera.runCommand( "transparency 80,r :/mda_alignment=3" )
 
 	# color ions like ligands
 	chimera.runCommand( "color %s ions" % ligcolor )
@@ -1551,7 +1556,7 @@ def openMod(path, uid, mav, templateModels, web=False):
 	
 	
 		
-def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'mutations', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
+def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, suppressdoubles = False, percentId = 0, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'mutations', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, showAlignment = True, noConfirm = False):
 	
 	"""
 	Main mda routine, stepwise processing of different tasks:
@@ -1571,7 +1576,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	status('Fetching BLAST results completed, now filtering results and loading structures...')
 	print('Fetching BLAST results completed, now filtering results and loading structures...')
 	try:
-		structures = processBlast(results, uid, path, minscore, includeNative, suppressdoubles, percentId, winnow, limit, keepPDB, skipPDB, excludeSelected, deleteHidden, hideSubmodels, suppressWarning)
+		structures = processBlast(results, uid, path, minscore, includeNative, suppressdoubles, percentId, winnow, limit, keepPDB, skipPDB, excludeSelected, deleteHidden, hideSubmodels, noConfirm)
 	except chimera.CancelOperation:
 		status('MDA aborted by user.')
 		print('MDA aborted by user.')
@@ -1591,7 +1596,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	hideSimilar(boxes, uid, group) 
 	closeSpheres()
 	gaps = arrangeModelsX(boxes, structures, uid, totseqlength)
-	chimera.runCommand("focus; savepos overlay") # use "reset overlay" to retrieve position where structures are not stacked in Y, before calling Modeller
+	chimera.runCommand("focus; ~set independent; savepos overlay") # use "reset overlay" to retrieve position where structures are not stacked in Y, before calling Modeller
 	arrangeModelsY(boxes, gaps, hideComplex)
 
 	status('Arranging completed, now applying coloring...')
@@ -1599,7 +1604,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	setAttributes(structures)
 	colorModels(structures, coloring)
 
-	if not hideMAV:
+	if showAlignment:
 		status('Coloring completed, loading sequence alignment...')
 		print('Coloring completed, loading sequence alignment...')
 		mav, templateModels = openMAV(path, uid, structures)
@@ -1607,7 +1612,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 		print('Now opening Modeller interface...')
 		openMod(path, uid, mav, templateModels)
 
-	chimera.runCommand("focus; set independent; savepos stacked; ~show ~ions") # use "reset stacked" to retrieve default position
+	chimera.runCommand("setattr p display 0; focus; set independent; savepos stacked; ~show ~ions") # use "reset stacked" to retrieve default position
 	tend = time.time() # for performance optimization
 	status('MDA completed after %d seconds.' % int(tend - tstart))
 	print('MDA completed after %d seconds.' % int(tend - tstart))
@@ -1616,7 +1621,7 @@ def main(results, uid, path, totseqlength, minscore = 50, includeNative = True, 
 	
 	
 
-def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative = False, suppressDoubles = False, percentId = 0, forceBlast = False, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'mutations', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, hideMAV = False, suppressWarning = False):
+def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative = False, suppressDoubles = False, percentId = 0, forceBlast = False, group = False, hideSubmodels = True, hideComplex = False, hideAltChain = True, deleteHidden = True, coloring= 'mutations', winnow = '0', limit = '0', keepPDB = '', skipPDB = '', excludeSelected = False, showAlignment = True, noConfirm = False):
 	
 	"""
 	Initial mda function, starts BLAST or reads stored BLAST database, then calls main().
@@ -1625,6 +1630,9 @@ def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative 
 	from os.path import expanduser, join, exists, isfile
 	from os import makedirs
 	from OpenSave import osOpen
+
+	# open reply log (crashes on windows if many models are opened with showAlignment false and reply log hidden)
+	OpenReplyLog()
 	
 	# Convert ~/ to user's home directory for path where output file is stored
 	path = expanduser(path)		
@@ -1702,14 +1710,13 @@ def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative 
 	# callback after BLAST has produced results...
 	def cb(results, uid = ID, filen = filenameblast, totseql = totseqlength, winnow = winnow, limit = limit):
 		# split cb into cb and main because an additional argument needs to be passed to cb!
-		# save results to file if BLASTresults aren't too large:
-		#print "BLAST RESULTS LENGTH", len(results[1]) 
-		if True: #len(results[1]) < 1000000:	
+		# save results to file
+		if uid: #and len(results[1]) < 1000000:	
 			blastshelf = shelve.open(filen, 'c')
 			blastshelf[uid+winnow] = results
 			blastshelf.close()
 		# process the results:
-		main(results, uid, path, totseql, minScore, includeNative, suppressDoubles, percentId, group, hideSubmodels, hideComplex, hideAltChain, deleteHidden, coloring, winnow, limit, keepPDB, skipPDB, excludeSelected, hideMAV, suppressWarning)
+		main(results, uid, path, totseql, minScore, includeNative, suppressDoubles, percentId, group, hideSubmodels, hideComplex, hideAltChain, deleteHidden, coloring, winnow, limit, keepPDB, skipPDB, excludeSelected, showAlignment, noConfirm)
 		
 	# blast function	
 	def startBlast(querySeq = seq, winnow = winnow):		
@@ -1743,11 +1750,10 @@ def mda(uniprotId = 'P02751', path = '~/Desktop/', minScore = 50, includeNative 
 			blastshelf.close()
 			startBlast()
 		else:	
-			main(results, ID, path, totseqlength, minScore, includeNative, suppressDoubles, percentId, group, hideSubmodels, hideComplex, hideAltChain, deleteHidden, coloring, winnow, limit, keepPDB, skipPDB, excludeSelected, hideMAV, suppressWarning)
+			main(results, ID, path, totseqlength, minScore, includeNative, suppressDoubles, percentId, group, hideSubmodels, hideComplex, hideAltChain, deleteHidden, coloring, winnow, limit, keepPDB, skipPDB, excludeSelected, showAlignment, noConfirm)
 	else:
 		startBlast()	
 		
-
 
 def mdacommand(cmdname, args):
 	"""
@@ -1774,8 +1780,8 @@ def mdacommand(cmdname, args):
 				('keepPDB', string_arg),
 				('skipPDB', string_arg),
 				('excludeSelected', bool_arg),
-				('hideMAV', bool_arg),
-				('suppressWarning', bool_arg) ) 
+				('showAlignment', bool_arg),
+				('noConfirm', bool_arg) ) 
 
 	kw = parse_arguments(cmdname, args, req_args, opt_args, kw_args)
 	mda(**kw)
