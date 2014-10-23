@@ -590,22 +590,6 @@ class Structure:
 		self.percentid = percentIdentity(self.seqobj, queryseqobj)
 
 
-
-	def calcPercentIdOld(self, querysequence):
-		identities = 0
-		doublegaps = 0
-		i = self.start
-		while self.start <= i <= self.end:
-			if self.sequence[i] == '-' and querysequence[i] == '-':
-				doublegaps += 1
-			elif self.sequence[i].isupper():
-				identities += 1			
-			i += 1	
-
-		seqlength = self.end - self.start + 1 - doublegaps # perhaps self.seqlength should be used...
-		self.percentid = 100 * (identities) / float(seqlength)
-
-
 	
 	def findLigands(self):
 
